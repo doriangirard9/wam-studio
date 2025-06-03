@@ -68,7 +68,10 @@ export default class RegionController {
   selectedRegionEndOutsideViewport: boolean = false;
   selectedRegionStartOutsideViewport: boolean = false;
 
-  doIt
+  private _lastRegionClickTime: number = 0;
+  private readonly DOUBLE_CLICK_DELAY = 300; // ms
+
+  doIt;
 
   constructor(app: App) {
     this._app = app
@@ -136,6 +139,7 @@ export default class RegionController {
       // TODO Try to add fallback if there is no region view, like a simple red cross invalid region view.
     }
 
+    console.log('LOG: Adding region', region.id, 'to track', track.id);
     // Add to the track
     track.addRegion(region)
     track.modified=true
@@ -378,6 +382,13 @@ export default class RegionController {
     if(region){
       if(isKeyPressed("Control","Meta")) this.selection.toggle(region,true)
       else this.selection.set(region)
+
+      if (Date.now() - this._lastRegionClickTime < this.DOUBLE_CLICK_DELAY && region instanceof SampleRegion) {
+        this._lastRegionClickTime = 0;
+        this._app.audioEditorController.showAudioEditor(region);
+      } else {
+        this._lastRegionClickTime = Date.now();
+      }
     }
 
     const toMove= this.selection.primary

@@ -130,6 +130,7 @@ export default class PlayheadController {
    * @param doSnap - If true, the playhead will snap according to the grid settings.
    */
   moveTo(pos: number, doSnap:boolean=false){
+    console.log("LOG moveTo", pos, doSnap);
     let pixelPos= pos / RATIO_MILLS_BY_PX
 
     if(this._app.editorView.snapping && doSnap && !this.snappingDisabled){

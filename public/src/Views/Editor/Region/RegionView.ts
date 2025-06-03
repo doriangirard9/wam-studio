@@ -94,6 +94,7 @@ export default abstract class RegionView<REGION extends RegionOf<REGION>> extend
 
     /** Is the region selected or not. Use to draw the current border of the background. */
     public set isSelected(value: boolean) {
+        console.log("LOG set isSelected", value);
         this._isSelected = value
         if(value)this._isSubSelected = false
         this.drawBackground();

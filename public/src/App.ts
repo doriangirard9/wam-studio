@@ -33,6 +33,8 @@ import PluginsView from "./Views/PluginsView";
 import ProjectView from "./Views/ProjectView";
 import SettingsView from "./Views/SettingsView";
 import TracksView from "./Views/TracksView";
+import AudioEditorView from "./Views/Editor/AudioEditorView";
+import AudioEditorController from "./Controllers/Editor/AudioEditorController";
 
 /**
  * Main class for the host. Start all controllers, views and models. All controllers and views are accessible frome this app.
@@ -54,6 +56,7 @@ export default class App {
     keyboardController: KeyboardController;
     exportController: ExporterController;
     loopController: LoopController;
+    audioEditorController: AudioEditorController;
 
     hostView: HostView;
     tracksView: TracksView;
@@ -66,6 +69,7 @@ export default class App {
     aboutView: AboutView;
     playgroundView: PlaygroundWindow;
     keyboardShortcutsView: KeyboardShortcutsView;
+    audioEditorView: AudioEditorView;
 
     host: Host;
     loader: Loader;
@@ -87,6 +91,7 @@ export default class App {
         this.aboutView = new AboutView();
         this.playgroundView = new PlaygroundWindow();
         this.keyboardShortcutsView = new KeyboardShortcutsView();
+        this.audioEditorView = new AudioEditorView();
 
         this.editorController = new EditorController(this);
         this.waveformController = new WaveformController(this);
@@ -104,6 +109,7 @@ export default class App {
         this.keyboardController = new KeyboardController(this);
         this.exportController = new ExporterController(this);
         this.loopController = new LoopController(this);
+        this.audioEditorController = new AudioEditorController(this);
         
         this.hostController.addDraggableWindow(this.pluginsView, this.latencyView, this.settingsView, 
             this.projectView, this.aboutView, this.keyboardShortcutsView);

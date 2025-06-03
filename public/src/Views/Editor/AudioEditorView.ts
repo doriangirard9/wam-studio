@@ -1,0 +1,13 @@
+import { AudioEditorElement } from "../../Components/Editor/AudioEditorElement";
+
+export default class AudioEditorView {
+    audioEditorContainerDiv: HTMLDivElement = document.getElementById("audio-editor") as HTMLDivElement;
+
+    public show(audioEditor: AudioEditorElement): void {
+        this.audioEditorContainerDiv.appendChild(audioEditor);
+    }
+
+    public hide(audioEditor: AudioEditorElement): void {
+        this.audioEditorContainerDiv.removeChild(audioEditor);
+    }
+}
