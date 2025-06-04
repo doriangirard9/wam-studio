@@ -1,46 +1,21 @@
 const template = document.createElement("template");
 
+// Modify the CSS styles to ensure the component takes more height
+
 template.innerHTML = /*html*/`
 <style id="style">
-body {
-  background: #111;
-  color: #fff;
-  font-family: sans-serif;
-  text-align: center;
-  padding: 2em;
-}
-
-canvas {
-  background: transparent;
-  border-radius: 8px;
-}
-
-.controls {
-  margin: 20px auto;
-}
-
-.waveform-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 1000px;
-  margin: 0 auto;
-}
-
-#overviewCanvas {
-  margin-bottom: 15px;
-  background: #222;
-}
-
 /* Main container */
 .main-waveform-container {
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 100%;
+  height: 100%;
+  min-height: 400px; /* Increase minimum height to 400px */
   background-color: rgba(0, 0, 0, 0.5);
   border-radius: 10px;
   padding: 15px;
+  box-sizing: border-box;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 }
 
@@ -48,7 +23,8 @@ canvas {
 .timeline-waveform-container {
   position: relative;
   width: 100%;
-  height: 330px;
+  height: calc(100% - 80px); /* Allocate more space for the waveform, leave 80px for controls */
+  min-height: 320px; /* Ensure minimum height for the waveform container */
 }
 
 /* Timeline canvas styling */
@@ -69,7 +45,7 @@ canvas {
   top: 30px; /* Leave space for timeline labels at top */
   left: 0;
   width: 100%;
-  height: 300px;
+  height: calc(100% - 30px);
   background: transparent; /* Transparent background to see the timeline */
   z-index: 2;
 }
@@ -84,7 +60,7 @@ canvas {
 
 #scrollBar {
   width: 100%;
-  height: 10px;
+  height: 15px; /* Make scrollbar a bit taller */
   cursor: pointer;
   background: #555;
   border-radius: 5px;
@@ -92,15 +68,17 @@ canvas {
 
 /* Style for the zoom control */
 .zoom-control {
-  margin-top: 10px;
+  margin-top: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
+  height: 40px; /* Set explicit height for the zoom control */
 }
 
 #zoomSlider {
   width: 300px;
+  height: 20px; /* Make slider taller */
 }
 
 #zoomInput {
@@ -124,47 +102,26 @@ canvas {
 }
 </style>
 
-<div>
-  <h1>Waveform Interactive</h1>
-
-  <input type="file" id="audioFile" accept="audio/*" />
-  <div class="controls">
-    <label for="precision">Densité d'échantillonnage :</label>
-    <input type="range" id="precision" min="1" max="10000" value="10" />
-    <span id="precisionValue">10</span><br />
-    <label>De :
-      <input type="number" id="startTime" value="0" step="0.1" /> sec</label>
-    <label>à : <input type="number" id="endTime" value="0" step="0.1" /> sec</label>
-    <button id="applyRange">Afficher</button>
+<div class="main-waveform-container">
+  <!-- Combined waveform view with timeline -->
+  <div class="timeline-waveform-container">
+    <!-- Timeline canvas as background -->
+    <canvas id="timelineCanvas"></canvas>
+    
+    <!-- Waveform canvas overlaid -->
+    <canvas id="waveform"></canvas>
   </div>
 
-  <div class="waveform-container">
-    <!-- Overview canvas on top -->
-    <canvas id="overviewCanvas" width="1000" height="100"></canvas>
-    
-    <!-- Main waveform area with integrated timeline -->
-    <div class="main-waveform-container">
-      <!-- Combined waveform view with timeline -->
-      <div class="timeline-waveform-container">
-        <!-- Timeline canvas as background -->
-        <canvas id="timelineCanvas" width="1000" height="330"></canvas>
-        
-        <!-- Waveform canvas overlaid -->
-        <canvas id="waveform" width="1000" height="300"></canvas>
-      </div>
+  <!-- Horizontal scroll bar to pan -->
+  <div id="scrollbarContainer">
+    <input type="range" id="scrollBar" min="0" value="0" step="0.01" />
+  </div>
 
-      <!-- Horizontal scroll bar to pan -->
-      <div id="scrollbarContainer">
-        <input type="range" id="scrollBar" min="0" value="0" step="0.01" />
-      </div>
-
-      <div class="zoom-control">
-        <label for="zoomSlider">Zoom:</label>
-        <input type="range" id="zoomSlider" min="0.5" max="248" step="0.1" value="1">
-        <span id="zoomValue">1x</span>
-        <input type="number" id="zoomInput" min="0.5" max="248" step="0.1" value="1">
-      </div>
-    </div>
+  <div class="zoom-control">
+    <label for="zoomSlider">Zoom:</label>
+    <input type="range" id="zoomSlider" min="0.5" max="100" step="0.1" value="1">
+    <span id="zoomValue">1x</span>
+    <input type="number" id="zoomInput" min="0.5" max="100" step="0.1" value="1">
   </div>
 </div>
 `;
@@ -172,24 +129,19 @@ canvas {
 // Define constants for virtual canvas
 const DEFAULT_VIRTUAL_DURATION = 600; // 10 minutes by default
 const MIN_CANVAS_DURATION = 60; // Minimum 1 minute duration for visualization
+const DEFAULT_PRECISION = 100; // Default precision value set to 1500
 
 // Define zoom milestones for waveform recalculation
-// const ZOOM_MILESTONES = [0.5, 1, 2, 5, 10, 20, 50, 100, 200];
 const ZOOM_MILESTONES = [0.1, 0.2, 0.5, 1, 2, 4, 6, 8, 10, 14, 18, 22, 28, 36, 48, 64, 80, 100];
 
 export class AudioEditorElement extends HTMLElement {
   public shadow: ShadowRoot;
 
   private audioBuffer: AudioBuffer | null = null;
-
-  private overviewCanvas!: HTMLCanvasElement;
-  private overviewDrawer!: WaveformDrawer;
   
   // Reference to timeline canvas
   private timelineCanvas!: HTMLCanvasElement;
-
-  private selectStart: number = 0;
-  private selectEnd: number = 0;
+  private waveformCanvas!: HTMLCanvasElement;
 
   // Track visible portion in main waveform
   private visibleStart: number = 0;
@@ -204,15 +156,94 @@ export class AudioEditorElement extends HTMLElement {
   
   // Canvas virtual duration (not audio-dependent)
   private canvasDuration: number = DEFAULT_VIRTUAL_DURATION;
+  
+  // Observer for resizing
+  private resizeObserver: ResizeObserver;
 
   constructor() {
     super();
     this.shadow = this.attachShadow({ mode: "open" });
+    
+    // Create resize observer to handle canvas resizing
+    this.resizeObserver = new ResizeObserver(() => {
+      this.handleResize();
+    });
   }
 
   public async connectedCallback() {
     this.shadow.appendChild(template.content.cloneNode(true));
-    this.init();
+    
+    // Wait for the next frame to ensure DOM is fully updated
+    requestAnimationFrame(() => {
+      this.init();
+      
+      // Observe the container for resize events
+      const container = this.shadow.querySelector('.timeline-waveform-container');
+      if (container) {
+        console.log('Starting resize observer on container');
+        this.resizeObserver.observe(container);
+      } else {
+        console.error('Could not find timeline-waveform-container element');
+      }
+      
+      // Set initial canvas size after a short delay to ensure dimensions are correct
+      setTimeout(() => {
+        this.handleResize();
+        
+        // Draw test waveform if no audio is loaded
+        if (!this.audioBuffer) {
+          console.log('No audio loaded, drawing test pattern');
+          // Create a debug audio buffer to test rendering
+          const testDuration = 2;
+          const sampleRate = 44100;
+          const testBuffer = new AudioContext().createBuffer(
+            2, 
+            testDuration * sampleRate, 
+            sampleRate
+          );
+          
+          // Fill with a simple sine wave
+          for (let channel = 0; channel < 2; channel++) {
+            const data = testBuffer.getChannelData(channel);
+            for (let i = 0; i < data.length; i++) {
+              data[i] = Math.sin(i / 100) * 0.5;
+            }
+          }
+          
+          this.setAudioBuffer(testBuffer);
+        }
+      }, 100);
+    });
+  }
+  
+  public disconnectedCallback() {
+    // Clean up resize observer
+    this.resizeObserver.disconnect();
+  }
+
+  /**
+   * Handle resizing of the container
+   */
+  private handleResize() {
+    // Get the container dimensions
+    const container = this.shadow.querySelector('.timeline-waveform-container');
+    if (!container) return;
+    
+    // Update canvas dimensions to match container
+    const rect = container.getBoundingClientRect();
+    
+    if (this.timelineCanvas) {
+      this.timelineCanvas.width = rect.width;
+      this.timelineCanvas.height = rect.height;
+    }
+    
+    if (this.waveformCanvas) {
+      this.waveformCanvas.width = rect.width;
+      this.waveformCanvas.height = rect.height - 30; // Account for timeline header
+    }
+    
+    // Refresh the view with new dimensions
+    this.refreshView(this.visibleStart, this.visibleEnd);
   }
 
   /**
@@ -231,16 +262,8 @@ export class AudioEditorElement extends HTMLElement {
   }
 
   public init() {
-    const audioInput = this.shadow.getElementById("audioFile") as HTMLInputElement;
-    const canvas = this.shadow.getElementById("waveform") as HTMLCanvasElement;
-    this.overviewCanvas = this.shadow.getElementById("overviewCanvas") as HTMLCanvasElement;
+    this.waveformCanvas = this.shadow.getElementById("waveform") as HTMLCanvasElement;
     this.timelineCanvas = this.shadow.getElementById("timelineCanvas") as HTMLCanvasElement;
-
-    const precisionInput = this.shadow.getElementById("precision") as HTMLInputElement;
-    const precisionValue = this.shadow.getElementById("precisionValue") as HTMLElement;
-    const startInput = this.shadow.getElementById("startTime") as HTMLInputElement;
-    const endInput = this.shadow.getElementById("endTime") as HTMLInputElement;
-    const applyButton = this.shadow.getElementById("applyRange") as HTMLButtonElement;
 
     const zoomSlider = this.shadow.getElementById("zoomSlider") as HTMLInputElement;
     const zoomValue = this.shadow.getElementById("zoomValue") as HTMLElement;
@@ -248,20 +271,15 @@ export class AudioEditorElement extends HTMLElement {
     
     // Get reference to the scroll bar
     const scrollBar = this.shadow.getElementById("scrollBar") as HTMLInputElement;
-
-    this.overviewDrawer = new WaveformDrawer();
     
     // We'll hold onto a WaveformDrawer instance for reuse with visual zoom
     this.currentWaveformDrawer = null;
 
-    let isSelecting: boolean = false;
-
-    startInput.disabled = false;
-    endInput.disabled = false;
+    // Set initial canvas size
+    this.handleResize();
     
     // Initialize empty canvas
-    this.initializeEmptyCanvas(canvas);
-    this.initializeEmptyOverview();
+    this.initializeEmptyCanvas();
     
     const updateUI = (start: number, end: number) => {
       this.refreshView(start, end);
@@ -270,7 +288,7 @@ export class AudioEditorElement extends HTMLElement {
     // Define a function to handle zoom changes from either slider or input
     const updateZoom = (zoom: number) => {
       // Clamp zoom to valid range
-      zoom = Math.max(0.1, Math.min(248, zoom));
+      zoom = Math.max(0.5, Math.min(100, zoom));
       
       // Store the current zoom level
       this.currentZoom = zoom;
@@ -298,64 +316,6 @@ export class AudioEditorElement extends HTMLElement {
     scrollBar.max = (this.canvasDuration - MIN_CANVAS_DURATION).toFixed(2);
     scrollBar.value = "0";
 
-    // The event listeners can now call refreshView directly
-    audioInput.addEventListener("change", async (e: Event) => {
-      const target = e.target as HTMLInputElement;
-      const file = target.files?.[0];
-      if (!file) return;
-
-      const arrayBuffer = await file.arrayBuffer();
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const decoded = await audioCtx.decodeAudioData(arrayBuffer);
-      
-      // Use our new method
-      this.setAudioBuffer(decoded);
-    });
-
-    precisionInput.addEventListener("input", () => {
-      precisionValue.textContent = precisionInput.value;
-    });
-
-    applyButton.addEventListener("click", () => {
-      const precision = parseInt(precisionInput.value);
-      
-      let start: number;
-      let end: number;
-    
-      const hasValidSelection = this.selectStart !== this.selectEnd;
-    
-      if (hasValidSelection) {
-        // Use selection as waveform view range
-        start = Math.min(this.selectStart, this.selectEnd);
-        end = Math.max(this.selectStart, this.selectEnd);
-    
-        // Calculate the zoom factor based on selection size
-        const selectionLength = end - start;
-        this.currentZoom = this.canvasDuration / selectionLength;
-    
-        // Update zoom controls to reflect calculated zoom
-        zoomSlider.value = this.currentZoom.toFixed(2);
-        zoomInput.value = this.currentZoom.toFixed(1);
-        zoomValue.textContent = `${this.currentZoom.toFixed(2)}x`;
-        
-        // Update UI with selection range
-        updateUI(start, end);
-      } else {
-        // Fallback: show full canvas duration
-        start = 0;
-        end = this.canvasDuration;
-        
-        // Reset zoom 
-        this.currentZoom = 1;
-        zoomSlider.value = "1";
-        zoomInput.value = "1";
-        zoomValue.textContent = "1x";
-        
-        // Update UI with full range
-        updateUI(start, end);
-      }
-    });
-    
     let lastZoomDrawn = -1;
 
     zoomSlider.addEventListener("input", () => {
@@ -383,7 +343,7 @@ export class AudioEditorElement extends HTMLElement {
     // Handle manual zoom input
     zoomInput.addEventListener("change", () => {
       const zoom = parseFloat(zoomInput.value);
-      if (!isNaN(zoom) && zoom >= 0.1 && zoom <= 248) {
+      if (!isNaN(zoom) && zoom >= 0.5 && zoom <= 100) {
         updateZoom(zoom);
       } else {
         // Reset to valid value if input is invalid
@@ -395,7 +355,7 @@ export class AudioEditorElement extends HTMLElement {
     zoomInput.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") {
         const zoom = parseFloat(zoomInput.value);
-        if (!isNaN(zoom) && zoom >= 0.1 && zoom <= 248) {
+        if (!isNaN(zoom) && zoom >= 0.5 && zoom <= 100) {
           updateZoom(zoom);
         } else {
           // Reset to valid value if input is invalid
@@ -415,131 +375,27 @@ export class AudioEditorElement extends HTMLElement {
       const newStart = scrollPosition;
       const newEnd = Math.min(this.canvasDuration, newStart + visibleDuration);
       
-      // Also update the selection points to match the visible area
-      this.selectStart = newStart;
-      this.selectEnd = newEnd;
-      
       // Update UI with new range
       updateUI(newStart, newEnd);
-    });
-
-    this.overviewCanvas.addEventListener("mousedown", (e: MouseEvent) => {
-      isSelecting = true;
-      const rect = this.overviewCanvas.getBoundingClientRect();
-      this.selectStart =
-        ((e.clientX - rect.left) / this.overviewCanvas.width) * this.canvasDuration;
-    });
-
-    this.overviewCanvas.addEventListener("mousemove", (e: MouseEvent) => {
-      if (!isSelecting) return;
-      
-      const rect = this.overviewCanvas.getBoundingClientRect();
-      this.selectEnd =
-        ((e.clientX - rect.left) / this.overviewCanvas.width) * this.canvasDuration;
-        
-      this.highlightSelection();
-    });
-
-    this.overviewCanvas.addEventListener("mouseup", () => {
-      if (!isSelecting) return;
-      isSelecting = false;
-      const start = Math.min(this.selectStart, this.selectEnd);
-      const end = Math.max(this.selectStart, this.selectEnd);
-      startInput.value = start.toFixed(2);
-      endInput.value = end.toFixed(2);
     });
   }
   
   /**
    * Initialize an empty canvas with time markers
    */
-  private initializeEmptyCanvas(canvas: HTMLCanvasElement): void {
-    const ctx = canvas.getContext('2d');
+  private initializeEmptyCanvas(): void {
+    const ctx = this.waveformCanvas.getContext('2d');
     if (!ctx) return;
     
     // Clear the canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, this.waveformCanvas.width, this.waveformCanvas.height);
     
     // Draw a horizontal line in the center
     ctx.beginPath();
-    ctx.moveTo(0, canvas.height / 2);
-    ctx.lineTo(canvas.width, canvas.height / 2);
+    ctx.moveTo(0, this.waveformCanvas.height / 2);
+    ctx.lineTo(this.waveformCanvas.width, this.waveformCanvas.height / 2);
     ctx.strokeStyle = "#333";
     ctx.stroke();
-  }
-  
-  /**
-   * Initialize empty overview with time markings
-   */
-  private initializeEmptyOverview(): void {
-    const ctx = this.overviewCanvas.getContext('2d');
-    if (!ctx) return;
-    
-    // Clear the canvas
-    ctx.clearRect(0, 0, this.overviewCanvas.width, this.overviewCanvas.height);
-    
-    // Draw a horizontal line in the center
-    ctx.beginPath();
-    ctx.moveTo(0, this.overviewCanvas.height / 2);
-    ctx.lineTo(this.overviewCanvas.width, this.overviewCanvas.height / 2);
-    ctx.strokeStyle = "#444";
-    ctx.stroke();
-    
-    // Add time markings
-    ctx.font = "10px Arial";
-    ctx.fillStyle = "#666";
-    ctx.textAlign = "center";
-    
-    const minuteMarkers = Math.min(10, this.canvasDuration / 60);
-    
-    for (let i = 0; i <= minuteMarkers; i++) {
-      const x = (i / minuteMarkers) * this.overviewCanvas.width;
-      const seconds = (i / minuteMarkers) * this.canvasDuration;
-      const minutes = Math.floor(seconds / 60);
-      const remainingSeconds = Math.floor(seconds % 60);
-      
-      // Draw tick mark
-      ctx.beginPath();
-      ctx.moveTo(x, this.overviewCanvas.height * 0.4);
-      ctx.lineTo(x, this.overviewCanvas.height * 0.6);
-      ctx.strokeStyle = "#555";
-      ctx.stroke();
-      
-      // Add time label
-      ctx.fillText(
-        `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`, 
-        x, 
-        this.overviewCanvas.height * 0.25
-      );
-    }
-  }
-  
-  /**
-   * Mark the audio boundary in the overview
-   */
-  private markAudioBoundary(): void {
-    if (!this.audioBuffer) return;
-    
-    const ctx = this.overviewCanvas.getContext('2d');
-    if (!ctx) return;
-    
-    // Calculate where audio ends
-    const audioEndX = (this.audioBuffer.duration / this.canvasDuration) * this.overviewCanvas.width;
-    
-    // Draw audio boundary marker
-    ctx.beginPath();
-    ctx.moveTo(audioEndX, 0);
-    ctx.lineTo(audioEndX, this.overviewCanvas.height);
-    ctx.strokeStyle = "rgba(255, 80, 80, 0.7)";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.lineWidth = 1;
-    
-    // Add audio boundary label
-    ctx.font = "10px Arial";
-    ctx.fillStyle = "rgba(255, 150, 150, 0.9)";
-    ctx.textAlign = "left";
-    ctx.fillText("End", audioEndX + 4, 10);
   }
 
   /**
@@ -705,110 +561,6 @@ export class AudioEditorElement extends HTMLElement {
     ctx.fillText(`Audio ${label}`, x, height - 5);
   }
 
-  // Highlights user selection on overview canvas
-  public highlightSelection(): void {
-    // Redraw overview to clear previous selection
-    if (this.audioBuffer) {
-      this.initializeEmptyOverview();
-      
-      // Initialize the overview drawer
-      const precision = 10; // Use a default precision for overview
-      this.overviewDrawer.init(this.audioBuffer, this.overviewCanvas, precision);
-      
-      // Calculate the width for the audio portion based on its duration relative to canvas duration
-      const audioWidth = (this.audioBuffer.duration / this.canvasDuration) * this.overviewCanvas.width;
-      
-      // Draw only the audio portion within the overview
-      this.overviewDrawer.drawWave(0, audioWidth);
-      
-      this.markAudioBoundary();
-    } else {
-      this.initializeEmptyOverview();
-    }
-    
-    const ctx = this.overviewCanvas.getContext("2d");
-    if (!ctx) return;
-
-    const startX =
-      (Math.min(this.selectStart, this.selectEnd) / this.canvasDuration) *
-      this.overviewCanvas.width;
-    const width =
-      (Math.abs(this.selectEnd - this.selectStart) / this.canvasDuration) *
-      this.overviewCanvas.width;
-
-    ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
-    ctx.fillRect(startX, 0, width, this.overviewCanvas.height);
-  }
-
-  // Highlights the currently visible area on overview canvas
-  public highlightVisibleArea(): void {
-    // First redraw the overview to clear any previous highlighting
-    if (this.audioBuffer) {
-      this.initializeEmptyOverview();
-      
-      // Initialize the overview drawer
-      const precision = 10; // Use a default precision for overview
-      this.overviewDrawer.init(this.audioBuffer, this.overviewCanvas, precision);
-      
-      // Calculate the width for the audio portion based on its duration relative to canvas duration
-      const audioWidth = (this.audioBuffer.duration / this.canvasDuration) * this.overviewCanvas.width;
-      
-      // Draw only the audio portion within the overview
-      this.overviewDrawer.drawWave(0, audioWidth);
-      
-      this.markAudioBoundary();
-    } else {
-      this.initializeEmptyOverview();
-    }
-    
-    const ctx = this.overviewCanvas.getContext("2d");
-    if (!ctx) return;
-    
-    // Convert time positions to x coordinates
-    const startX = (this.visibleStart / this.canvasDuration) * this.overviewCanvas.width;
-    const endX = (this.visibleEnd / this.canvasDuration) * this.overviewCanvas.width;
-    const width = endX - startX;
-    
-    // Draw semi-transparent highlight for visible area
-    ctx.fillStyle = "rgba(0, 150, 255, 0.3)";
-    ctx.fillRect(startX, 0, width, this.overviewCanvas.height);
-    
-    // Draw borders to make the visible area more obvious
-    ctx.strokeStyle = "rgba(0, 150, 255, 0.8)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    
-    // Vertical lines at start and end
-    ctx.moveTo(startX, 0);
-    ctx.lineTo(startX, this.overviewCanvas.height);
-    ctx.moveTo(endX, 0);
-    ctx.lineTo(endX, this.overviewCanvas.height);
-    
-    ctx.stroke();
-    
-    // Add draggable handles on the highlighted area
-    this.drawDragHandles(ctx, startX, endX);
-  }
-  
-  // Draw drag handles on the visible area
-  private drawDragHandles(ctx: CanvasRenderingContext2D, startX: number, endX: number): void {
-    const handleSize = 8;
-    const halfHandle = handleSize / 2;
-    const centerY = this.overviewCanvas.height / 2;
-    
-    // Draw center handle for easier grabbing
-    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.strokeStyle = "rgba(0, 150, 255, 1)";
-    ctx.lineWidth = 1;
-    
-    // Middle handle
-    const middleX = startX + (endX - startX) / 2;
-    ctx.beginPath();
-    ctx.rect(middleX - halfHandle, centerY - halfHandle, handleSize, handleSize);
-    ctx.fill();
-    ctx.stroke();
-  }
-
   /**
    * Display the current zoom level indicator
    */
@@ -818,53 +570,31 @@ export class AudioEditorElement extends HTMLElement {
       zoomDisplay.textContent = `${visualZoom.toFixed(1)}x`;
     } else {
       // Otherwise show that we're using a pre-calculated value visually scaled
-      zoomDisplay.textContent = `${visualZoom.toFixed(1)}x (based on ${calculatedZoom.toFixed(1)}x)`;
+      zoomDisplay.textContent = `${visualZoom.toFixed(1)}x`;
     }
   }
 
-  // Add a new method to set the audio buffer directly
+  // Method to set the audio buffer directly
   public setAudioBuffer(buffer: AudioBuffer): void {
     this.audioBuffer = buffer;
-    
-    // Get the precision value from the UI
-    const precisionInput = this.shadow.getElementById("precision") as HTMLInputElement;
-    const precision = parseInt(precisionInput.value);
-
-    // Initialize overview to show full canvas duration with audio 
-    this.initializeEmptyOverview();
-    
-    // Draw the audio portion in the overview
-    this.overviewDrawer.init(buffer, this.overviewCanvas, precision);
-    this.overviewDrawer.drawWave(0, (buffer.duration / this.canvasDuration) * this.overviewCanvas.width);
-    
-    // Mark the audio boundary in the overview
-    this.markAudioBoundary();
     
     // Reset waveform drawer to ensure recalculation with new audio
     this.currentWaveformDrawer = null;
     this.lastCalculatedZoom = 1;
     
     // Keep the current visible range but refresh the view to show audio if applicable
-    // We need to access updateUI from here, so we'll need to refactor a bit
     this.refreshView(this.visibleStart, this.visibleEnd);
   }
 
-  // Refactor updateUI to be a class method so we can call it from setAudioBuffer
+  // Refresh view to update waveform display
   private refreshView(start: number, end: number): void {
-    const canvas = this.shadow.getElementById("waveform") as HTMLCanvasElement;
-    const precisionInput = this.shadow.getElementById("precision") as HTMLInputElement;
-    const startInput = this.shadow.getElementById("startTime") as HTMLInputElement;
-    const endInput = this.shadow.getElementById("endTime") as HTMLInputElement;
-    const zoomSlider = this.shadow.getElementById("zoomSlider") as HTMLInputElement;
     const zoomValue = this.shadow.getElementById("zoomValue") as HTMLElement;
     const zoomInput = this.shadow.getElementById("zoomInput") as HTMLInputElement;
     const scrollBar = this.shadow.getElementById("scrollBar") as HTMLInputElement;
     
-    const precision = parseInt(precisionInput.value);
-    
     // Clear the main waveform canvas
-    const ctx = canvas.getContext("2d");
-    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const ctx = this.waveformCanvas.getContext("2d");
+    if (ctx) ctx.clearRect(0, 0, this.waveformCanvas.width, this.waveformCanvas.height);
     
     // Draw audio waveform if available and overlapping with visible range
     if (this.audioBuffer) {
@@ -898,8 +628,8 @@ export class AudioEditorElement extends HTMLElement {
           // Initialize waveform drawer with the overlapping section and the calculated zoom level
           this.currentWaveformDrawer.init(
             this.audioBuffer, 
-            canvas, 
-            precision, 
+            this.waveformCanvas, 
+            DEFAULT_PRECISION, 
             visibleAudioStart, 
             visibleAudioEnd,
             calculatedZoomLevel
@@ -911,8 +641,8 @@ export class AudioEditorElement extends HTMLElement {
         
         // Adjust position to account for canvas coordinates
         // Calculate what percentage of the view should be occupied by the audio
-        const startOffset = (visibleAudioStart - start) / (end - start) * canvas.width;
-        const visibleWidth = (visibleAudioEnd - visibleAudioStart) / (end - start) * canvas.width;
+        const startOffset = (visibleAudioStart - start) / (end - start) * this.waveformCanvas.width;
+        const visibleWidth = (visibleAudioEnd - visibleAudioStart) / (end - start) * this.waveformCanvas.width;
         
         // Draw the wave at the correct position with the correct width, passing visual zoom factor
         if (this.currentWaveformDrawer) {
@@ -926,13 +656,6 @@ export class AudioEditorElement extends HTMLElement {
     
     // Update timeline
     this.drawTimeline(start, end);
-    
-    // Update the visible area highlight in overview
-    this.highlightVisibleArea();
-    
-    // Update time inputs
-    startInput.value = start.toFixed(2);
-    endInput.value = end.toFixed(2);
     
     // Update visible range tracking
     this.visibleStart = start;
@@ -959,14 +682,14 @@ export class WaveformDrawer {
   private decodedAudioBuffer: AudioBuffer | null = null;
   private peaks: Float32Array | null = null;
   private canvas: HTMLCanvasElement | null = null;
-  private sampleStep: number = 10;
+  private sampleStep: number = DEFAULT_PRECISION;
   // Track the actual zoom level used for peak calculation
   private calculatedZoomLevel: number = 1; 
 
   init(
     decodedAudioBuffer: AudioBuffer,
     canvas: HTMLCanvasElement,
-    sampleStep: number = 10,
+    sampleStep: number = DEFAULT_PRECISION,
     startSec: number = 0,
     endSec: number | null = null,
     zoomLevel: number = 1
