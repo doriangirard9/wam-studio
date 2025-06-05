@@ -108,7 +108,7 @@ template.innerHTML = /*html*/`
   height: 100%;
   width: 1px;
   background-color: rgba(200, 200, 200, 0.7);
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 3;
   transition: left 0.05s linear;
 }
@@ -193,6 +193,8 @@ export class AudioEditorElement extends HTMLElement {
 
   // Do we use page-based scrolling triggered by playhead, or dynamic scrolling
   private readonly usePageBasedScrolling: boolean = true;
+  
+  private isDraggingPlayhead: boolean = false;
 
 
   constructor() {
@@ -299,7 +301,7 @@ export class AudioEditorElement extends HTMLElement {
   public init() {
     this.waveformCanvas = this.shadow.getElementById("waveform") as HTMLCanvasElement;
     this.timelineCanvas = this.shadow.getElementById("timelineCanvas") as HTMLCanvasElement;
-    this.playheadElement = this.shadow.getElementById("audioEditorPlayhead") as HTMLElement;
+    this.initPlayhead();
 
     const zoomSlider = this.shadow.getElementById("zoomSlider") as HTMLInputElement;
     const zoomValue = this.shadow.getElementById("zoomValue") as HTMLElement;
@@ -414,6 +416,114 @@ export class AudioEditorElement extends HTMLElement {
       // Update UI with new range
       updateUI(newStart, newEnd);
     });
+  }
+
+  /**
+   * Initialize the playhead element and set up interactivity
+   */
+  private initPlayhead(): void {
+    this.playheadElement = this.shadow.getElementById("audioEditorPlayhead") as HTMLElement;
+    if (!this.playheadElement) return;
+    
+    // Add cursor style to indicate interactivity
+    this.playheadElement.style.cursor = 'col-resize';
+    
+    const container = this.shadow.querySelector('.timeline-waveform-container') as HTMLElement;
+    if (!container) return;
+    
+    // Allow clicking directly on playhead to start dragging
+    this.playheadElement.addEventListener('mousedown', (e) => {
+      this.isDraggingPlayhead = true;
+      e.preventDefault();
+      
+      // Visual feedback during drag
+      this.playheadElement.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+      document.body.style.cursor = 'col-resize';
+      
+      // Disable transition for smoother dragging
+      this.playheadElement.style.transition = 'none';
+    });
+    
+    // Allow clicking anywhere in the container to move playhead
+    container.addEventListener('mousedown', (e) => {
+      // Only handle direct container clicks (not on other controls)
+      if (e.target === container || 
+          e.target === this.waveformCanvas || 
+          e.target === this.timelineCanvas) {
+        // Calculate click position relative to container
+        const rect = container.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        
+        // Move playhead to clicked position
+        this.movePlayheadToPosition(x);
+        
+        // Start dragging
+        this.isDraggingPlayhead = true;
+        
+        // Visual feedback
+        this.playheadElement.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+        document.body.style.cursor = 'col-resize';
+        this.playheadElement.style.transition = 'none';
+      }
+    });
+    
+    // Track mouse movement while dragging
+    document.addEventListener('mousemove', (e) => {
+      if (!this.isDraggingPlayhead) return;
+      
+      const rect = container.getBoundingClientRect();
+      let x = e.clientX - rect.left;
+      
+      // Constrain to container bounds
+      x = Math.max(0, Math.min(x, container.offsetWidth));
+      
+      // Update playhead position
+      this.movePlayheadToPosition(x);
+    });
+    
+    // End dragging when mouse is released
+    document.addEventListener('mouseup', () => {
+      if (!this.isDraggingPlayhead) return;
+      
+      // Reset state
+      this.isDraggingPlayhead = false;
+      
+      // Restore appearance
+      this.playheadElement.style.backgroundColor = 'rgba(200, 200, 200, 0.7)';
+      document.body.style.cursor = 'default';
+      this.playheadElement.style.transition = 'left 0.05s linear';
+    });
+  }
+
+  /**
+   * Move the playhead to a specific pixel position in the editor
+   * @param pixelPosition X position in pixels within the waveform container
+   */
+  private movePlayheadToPosition(pixelPosition: number): void {
+    if (!this.waveformCanvas) return;
+    
+    // Calculate the corresponding time in seconds
+    const positionRatio = pixelPosition / this.waveformCanvas.width;
+    const timeInSeconds = this.visibleStart + positionRatio * (this.visibleEnd - this.visibleStart);
+    
+    // Update internal state
+    this.playheadPosition = timeInSeconds;
+    
+    // Update visual position
+    this.playheadElement.style.left = `${pixelPosition}px`;
+    this.playheadElement.style.display = 'block';
+
+    // Dispatch custom event to notify application about playhead movement
+    const event = new CustomEvent('audioeditorplayheadmove', {
+      bubbles: true, 
+      composed: true,
+      detail: {
+        positionMs: timeInSeconds * 1000,
+        source: 'audioeditor'
+      }
+    });
+    
+    this.dispatchEvent(event);
   }
   
   /**
@@ -724,6 +834,8 @@ export class AudioEditorElement extends HTMLElement {
  * @param isPlayback Whether this update is from active playback
  */
 public updatePlayhead(appPlayheadTimeMs: number, isPlayback: boolean = false): void {
+  if (this.isDraggingPlayhead) return;
+  
   // Store position in seconds
   this.playheadPosition = appPlayheadTimeMs / 1000;
   

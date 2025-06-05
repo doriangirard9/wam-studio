@@ -41,8 +41,16 @@ export default class AudioEditorController {
         audioEditorElement.setAudioBuffer(region.buffer);
         
         // Initialize playhead with last known app position
-        // This will work because the playhead controller will have updated positions already
         audioEditorElement.updatePlayhead(this._lastKnownPlayheadPos);
+        
+        audioEditorElement.addEventListener('audioeditorplayheadmove', (e: Event) => {
+            const customEvent = e as CustomEvent;
+            const positionMs = customEvent.detail.positionMs;
+            
+            this._lastKnownPlayheadPos = positionMs;
+            this._app.host.playhead = positionMs;
+            this._app.hostView.updateTimer(positionMs)
+        });
     }
     
     /**
