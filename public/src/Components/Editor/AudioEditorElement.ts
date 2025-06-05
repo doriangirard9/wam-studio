@@ -159,7 +159,7 @@ const MIN_CANVAS_DURATION = 60; // Minimum 1 minute duration for visualization
 const DEFAULT_PRECISION = 100;
 
 // Define zoom milestones for waveform recalculation
-const ZOOM_MILESTONES = [0.1, 0.2, 0.5, 1, 2, 4, 6, 8, 10, 14, 18, 22, 28, 36, 48, 64, 80, 100];
+const ZOOM_MILESTONES = [0.1, 0.2, 0.5, 1, 2, 4, 6, 8, 10, 14, 18, 22, 28, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 100];
 
 export class AudioEditorElement extends HTMLElement {
   public shadow: ShadowRoot;
@@ -309,7 +309,8 @@ export class AudioEditorElement extends HTMLElement {
     
     // Get reference to the scroll bar
     const scrollBar = this.shadow.getElementById("scrollBar") as HTMLInputElement;
-    
+    this.setupWheelZoom();
+
     // We'll hold onto a WaveformDrawer instance for reuse with visual zoom
     this.currentWaveformDrawer = null;
 
@@ -323,7 +324,6 @@ export class AudioEditorElement extends HTMLElement {
       this.refreshView(start, end);
     };
     
-    // Define a function to handle zoom changes from either slider or input
     const updateZoom = (zoom: number) => {
       // Clamp zoom to valid range
       zoom = Math.max(0.5, Math.min(100, zoom));
@@ -334,12 +334,17 @@ export class AudioEditorElement extends HTMLElement {
       // Calculate visible duration based on current zoom
       const visibleDuration = this.canvasDuration / zoom;
       
-      // Use the current visible area's center point for zooming
-      const center = (this.visibleStart + this.visibleEnd) / 2;
+      // For slider zoom, always try to center on playhead position with no fallback
+      let zoomCenterSecs = this.playheadPosition;
       
-      // Calculate new start and end times
-      const start = Math.max(0, center - visibleDuration / 2);
-      const end = Math.min(this.canvasDuration, center + visibleDuration / 2);
+      // If playhead is outside visible range, adjust it to the current visible center
+      if (!this.isPlayheadInVisibleRange(this.playheadPosition * 1000)) {
+        zoomCenterSecs = (this.visibleStart + this.visibleEnd) / 2;
+      }
+      
+      // Calculate new start and end times based on center point
+      const start = Math.max(0, zoomCenterSecs - visibleDuration / 2);
+      const end = Math.min(this.canvasDuration, start + visibleDuration);
       
       // Update UI with new range
       updateUI(start, end);
@@ -416,6 +421,69 @@ export class AudioEditorElement extends HTMLElement {
       // Update UI with new range
       updateUI(newStart, newEnd);
     });
+  }
+
+  /**
+   * Set up mouse wheel zoom functionality
+   */
+  private setupWheelZoom(): void {
+    const container = this.shadow.querySelector('.timeline-waveform-container') as HTMLElement;
+    const zoomSlider = this.shadow.getElementById("zoomSlider") as HTMLInputElement;
+    
+    if (!container || !zoomSlider) return;
+    
+    // Add wheel event listener to container
+    container.addEventListener('wheel', (e) => {
+      // Prevent default behavior (page scrolling)
+      e.preventDefault();
+      
+      // Determine zoom direction based on wheel delta
+      const zoomDirection = e.deltaY < 0 ? 1 : -1; // 1 for zoom in, -1 for zoom out
+      
+      // Calculate zoom increment based on current zoom level (smaller steps at lower zoom)
+      const zoomIncrement = this.currentZoom < 5 ? 0.5 : (this.currentZoom < 20 ? 1 : 2);
+      
+      // Calculate new zoom level
+      let newZoom = this.currentZoom + (zoomDirection * zoomIncrement);
+      
+      // Clamp zoom to valid range
+      newZoom = Math.max(0.5, Math.min(100, newZoom));
+      
+      // Get cursor position relative to container
+      const rect = container.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      const cursorPosRatio = cursorX / this.waveformCanvas.width;
+      const cursorPosSecs = this.visibleStart + cursorPosRatio * (this.visibleEnd - this.visibleStart);
+      
+      // Determine zoom center point
+      let zoomCenterSecs;
+      const edgeBuffer = (this.visibleEnd - this.visibleStart) * 0.1; // 10% buffer from edge
+      
+      // Check if playhead is visible and not too close to the edge
+      if (this.isPlayheadInVisibleRange(this.playheadPosition * 1000) && 
+          this.playheadPosition >= (this.visibleStart + edgeBuffer) &&
+          this.playheadPosition <= (this.visibleEnd - edgeBuffer)) {
+        // Use playhead position as zoom center
+        zoomCenterSecs = this.playheadPosition;
+      } else {
+        // Use cursor position as fallback
+        zoomCenterSecs = cursorPosSecs;
+      }
+      
+      // Calculate the new visible range based on center point and new zoom
+      const visibleDuration = this.canvasDuration / newZoom;
+      const newStart = Math.max(0, zoomCenterSecs - (visibleDuration / 2));
+      const newEnd = Math.min(this.canvasDuration, newStart + visibleDuration);
+      
+      // Update UI elements
+      zoomSlider.value = newZoom.toString();
+      
+      // Update zoom display and internal state
+      this.currentZoom = newZoom;
+      
+      // Refresh the view with new range
+      this.refreshView(newStart, newEnd);
+    }, { passive: false });
   }
 
   /**
