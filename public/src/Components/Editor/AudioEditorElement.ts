@@ -13,8 +13,7 @@ template.innerHTML = /*html*/`
   height: 100%;
   min-height: 400px; /* Increase minimum height to 400px */
   background-color: rgba(0, 0, 0, 0.5);
-  border-radius: 10px;
-  padding: 15px;
+  padding: 5px;
   box-sizing: border-box;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 }
@@ -123,9 +122,35 @@ template.innerHTML = /*html*/`
   background-color: white;
   clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
 }
+
+.close-button-container {
+  position: relative;
+  width: 100%;
+}
+
+.close-button {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  top: 5px;
+  right: 5px;
+  background-color: rgba(255, 0, 0, 0.7);
+  border-radius: 10%;
+  color: white;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 5px;
+  z-index: 4;
+}
+
 </style>
 
 <div class="main-waveform-container">
+  <div class="close-button-container">
+    <button class="close-button">X</button>
+  </div>
+
   <!-- Combined waveform view with timeline -->
   <div class="timeline-waveform-container">
     <!-- Timeline canvas as background -->
@@ -306,6 +331,11 @@ export class AudioEditorElement extends HTMLElement {
     const zoomSlider = this.shadow.getElementById("zoomSlider") as HTMLInputElement;
     const zoomValue = this.shadow.getElementById("zoomValue") as HTMLElement;
     const zoomInput = this.shadow.getElementById("zoomInput") as HTMLInputElement;
+
+    const closeButton = this.shadow.querySelector('.close-button') as HTMLButtonElement;
+    closeButton.addEventListener('click', () => {
+      this.onCloseButtonClick();
+    });
     
     // Get reference to the scroll bar
     const scrollBar = this.shadow.getElementById("scrollBar") as HTMLInputElement;
@@ -421,6 +451,14 @@ export class AudioEditorElement extends HTMLElement {
       // Update UI with new range
       updateUI(newStart, newEnd);
     });
+  }
+
+  private onCloseButtonClick() {
+    const closeEvent = new CustomEvent('audioeditorclose', {
+      bubbles: true,
+      composed: true
+    });
+    this.dispatchEvent(closeEvent);
   }
 
   /**

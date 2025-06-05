@@ -1,17 +1,15 @@
 import App from "../../App";
 import { AudioEditorElement } from "../../Components/Editor/AudioEditorElement";
 import SampleRegion from "../../Models/Region/SampleRegion";
-import { RATIO_MILLS_BY_PX } from "../../Env";
 
 export default class AudioEditorController {
     private _app: App;
     private _currentEditor: AudioEditorElement | null = null;
-    private _lastKnownPlayheadPos: number = 0; // Store the last known playhead position
+    private _lastKnownPlayheadPos: number = 0;
 
     constructor(app: App) {
         this._app = app;
         
-        // Listen to app playhead movements
         this._app.host.onPlayHeadMove.add(this.handleAppPlayheadMove.bind(this));
     }
     
@@ -51,6 +49,11 @@ export default class AudioEditorController {
             this._app.host.playhead = positionMs;
             this._app.hostView.updateTimer(positionMs)
         });
+        audioEditorElement.addEventListener('audioeditorclose', () => {
+                this._app.audioEditorView.hide(audioEditorElement);
+                this._currentEditor = null;
+            }
+        );
     }
     
     /**
