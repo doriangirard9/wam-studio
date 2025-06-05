@@ -100,6 +100,29 @@ template.innerHTML = /*html*/`
   width: 40px;
   text-align: center;
 }
+
+/* Playhead styling */
+.playhead {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 1px;
+  background-color: rgba(200, 200, 200, 0.7);
+  pointer-events: none;
+  z-index: 3;
+  transition: left 0.05s linear;
+}
+
+.playhead::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 9px;
+  height: 9px;
+  background-color: white;
+  clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
+}
 </style>
 
 <div class="main-waveform-container">
@@ -110,6 +133,10 @@ template.innerHTML = /*html*/`
     
     <!-- Waveform canvas overlaid -->
     <canvas id="waveform"></canvas>
+
+    <!-- Playhead element -->
+    <div class="playhead" id="audioEditorPlayhead"></div>
+ 
   </div>
 
   <!-- Horizontal scroll bar to pan -->
@@ -159,6 +186,10 @@ export class AudioEditorElement extends HTMLElement {
   
   // Observer for resizing
   private resizeObserver: ResizeObserver;
+
+  // Playhead
+  private playheadElement!: HTMLElement;
+  private playheadPosition: number = 0;
 
   constructor() {
     super();
@@ -264,6 +295,7 @@ export class AudioEditorElement extends HTMLElement {
   public init() {
     this.waveformCanvas = this.shadow.getElementById("waveform") as HTMLCanvasElement;
     this.timelineCanvas = this.shadow.getElementById("timelineCanvas") as HTMLCanvasElement;
+    this.playheadElement = this.shadow.getElementById("audioEditorPlayhead") as HTMLElement;
 
     const zoomSlider = this.shadow.getElementById("zoomSlider") as HTMLInputElement;
     const zoomValue = this.shadow.getElementById("zoomValue") as HTMLElement;
@@ -660,7 +692,9 @@ export class AudioEditorElement extends HTMLElement {
     // Update visible range tracking
     this.visibleStart = start;
     this.visibleEnd = end;
-    
+
+    this.updatePlayhead(this.playheadPosition * 1000); 
+
     // Update zoom input to reflect current zoom
     zoomInput.value = this.currentZoom.toFixed(1);
     
@@ -673,6 +707,44 @@ export class AudioEditorElement extends HTMLElement {
     scrollBar.max = maxScroll > 0 ? maxScroll.toFixed(2) : "0";
     scrollBar.value = start.toFixed(2);
     scrollBar.disabled = maxScroll <= 0;
+  }
+  
+
+  // -------------------------------
+  // Playhead management
+  // -------------------------------
+
+  /**
+   * Update the playhead position based on the application playhead time
+   * @param appPlayheadTimeMs Application playhead time in milliseconds
+   */
+  public updatePlayhead(appPlayheadTimeMs: number): void {
+    // Store position in seconds
+    this.playheadPosition = appPlayheadTimeMs / 1000;
+    
+    // Check if playhead time is within our visible range
+    if (this.playheadPosition >= this.visibleStart && this.playheadPosition <= this.visibleEnd) {
+      // Calculate position within the viewport
+      const positionRatio = (this.playheadPosition - this.visibleStart) / (this.visibleEnd - this.visibleStart);
+      const pixelPosition = positionRatio * this.waveformCanvas.width;
+      
+      // Update playhead position
+      this.playheadElement.style.left = `${pixelPosition}px`;
+      this.playheadElement.style.display = 'block';
+    } else {
+      // Hide playhead if not in visible range
+      this.playheadElement.style.display = 'none';
+    }
+  }
+
+  /**
+   * Check if the application playhead time is within the visible audio range
+   * @param appPlayheadTimeMs Application playhead time in milliseconds
+   * @returns Boolean indicating if playhead is in visible range
+   */
+  public isPlayheadInVisibleRange(appPlayheadTimeMs: number): boolean {
+    const playheadSec = appPlayheadTimeMs / 1000;
+    return playheadSec >= this.visibleStart && playheadSec <= this.visibleEnd;
   }
 }
 
@@ -840,4 +912,5 @@ export class WaveformDrawer {
     
     ctx.stroke();
   }
+  
 }
