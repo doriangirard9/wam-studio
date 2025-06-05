@@ -26,7 +26,7 @@ export default class AudioEditorController {
         
         // If an editor is open, update its playhead
         if (this._currentEditor) {
-            this._currentEditor.updatePlayhead(pos);
+            this._currentEditor.updatePlayhead(pos, movedByPlayer);
         }
     }
     

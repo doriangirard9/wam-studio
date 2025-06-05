@@ -156,7 +156,7 @@ template.innerHTML = /*html*/`
 // Define constants for virtual canvas
 const DEFAULT_VIRTUAL_DURATION = 600; // 10 minutes by default
 const MIN_CANVAS_DURATION = 60; // Minimum 1 minute duration for visualization
-const DEFAULT_PRECISION = 100; // Default precision value set to 1500
+const DEFAULT_PRECISION = 100;
 
 // Define zoom milestones for waveform recalculation
 const ZOOM_MILESTONES = [0.1, 0.2, 0.5, 1, 2, 4, 6, 8, 10, 14, 18, 22, 28, 36, 48, 64, 80, 100];
@@ -190,6 +190,10 @@ export class AudioEditorElement extends HTMLElement {
   // Playhead
   private playheadElement!: HTMLElement;
   private playheadPosition: number = 0;
+
+  // Do we use page-based scrolling triggered by playhead, or dynamic scrolling
+  private readonly usePageBasedScrolling: boolean = true;
+
 
   constructor() {
     super();
@@ -715,27 +719,82 @@ export class AudioEditorElement extends HTMLElement {
   // -------------------------------
 
   /**
-   * Update the playhead position based on the application playhead time
-   * @param appPlayheadTimeMs Application playhead time in milliseconds
-   */
-  public updatePlayhead(appPlayheadTimeMs: number): void {
-    // Store position in seconds
-    this.playheadPosition = appPlayheadTimeMs / 1000;
+ * Update the playhead position based on the application playhead time
+ * @param appPlayheadTimeMs Application playhead time in milliseconds
+ * @param isPlayback Whether this update is from active playback
+ */
+public updatePlayhead(appPlayheadTimeMs: number, isPlayback: boolean = false): void {
+  // Store position in seconds
+  this.playheadPosition = appPlayheadTimeMs / 1000;
+  
+  // Check if playhead time is within our visible range
+  if (this.playheadPosition >= this.visibleStart && this.playheadPosition <= this.visibleEnd) {
+    // Calculate position within the viewport
+    const positionRatio = (this.playheadPosition - this.visibleStart) / (this.visibleEnd - this.visibleStart);
+    const pixelPosition = positionRatio * this.waveformCanvas.width;
     
-    // Check if playhead time is within our visible range
-    if (this.playheadPosition >= this.visibleStart && this.playheadPosition <= this.visibleEnd) {
-      // Calculate position within the viewport
-      const positionRatio = (this.playheadPosition - this.visibleStart) / (this.visibleEnd - this.visibleStart);
-      const pixelPosition = positionRatio * this.waveformCanvas.width;
+    // Update playhead position - remove transition during playback for smoother updates
+    this.playheadElement.style.transition = isPlayback ? 'none' : 'left 0.05s linear';
+    this.playheadElement.style.left = `${pixelPosition}px`;
+    this.playheadElement.style.display = 'block';
+    
+    // Get scrollbar for viewport control
+    const scrollBar = this.shadow.getElementById("scrollBar") as HTMLInputElement;
+    if (scrollBar && isPlayback) {
+      const visibleDuration = this.visibleEnd - this.visibleStart;
+      let newStart = this.visibleStart;
       
-      // Update playhead position
-      this.playheadElement.style.left = `${pixelPosition}px`;
-      this.playheadElement.style.display = 'block';
-    } else {
-      // Hide playhead if not in visible range
-      this.playheadElement.style.display = 'none';
+      if (this.usePageBasedScrolling) {
+        // PAGE-BASED SCROLLING BEHAVIOR
+        // Check if playhead is near the edge of the viewport (>90%)
+        const edgeThreshold = this.waveformCanvas.width * 0.9;
+        
+        if (pixelPosition > edgeThreshold) {
+          // Jump forward by one page (current visible duration)
+          newStart = Math.min(
+            this.visibleStart + visibleDuration * 0.9, // Overlap by 10%
+            this.canvasDuration - visibleDuration // Don't scroll past the end
+          );
+          
+          // Update scrollbar and view if we need to move
+          if (newStart > this.visibleStart) {
+            scrollBar.value = newStart.toFixed(2);
+            this.refreshView(newStart, newStart + visibleDuration);
+          }
+        }
+      } else {
+        // DYNAMIC CENTER-ALIGNED SCROLLING BEHAVIOR
+        // Check if playhead passes the center of the viewport
+        const centerThreshold = this.waveformCanvas.width * 0.5;
+        
+        if (pixelPosition > centerThreshold) {
+          // Calculate how far past the center we are as a percentage
+          const pastCenter = pixelPosition - centerThreshold;
+          const pastCenterRatio = pastCenter / centerThreshold;
+          
+          // Calculate new starting position based on how far we've exceeded the center
+          // This creates a smooth scroll that keeps the playhead near the center
+          const movementAmount = pastCenterRatio * (this.playheadPosition - this.visibleStart) * 0.1;
+          
+          // Ensure we don't scroll past the available canvas
+          newStart = Math.min(
+            this.visibleStart + movementAmount,
+            this.canvasDuration - visibleDuration
+          );
+          
+          // Only update if we need to scroll
+          if (newStart > this.visibleStart) {
+            scrollBar.value = newStart.toFixed(2);
+            this.refreshView(newStart, newStart + visibleDuration);
+          }
+        }
+      }
     }
+  } else {
+    // Hide playhead if not in visible range
+    this.playheadElement.style.display = 'none';
   }
+}
 
   /**
    * Check if the application playhead time is within the visible audio range
