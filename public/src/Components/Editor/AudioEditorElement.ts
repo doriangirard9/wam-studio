@@ -271,7 +271,7 @@ export class AudioEditorElement extends HTMLElement {
             }
           }
           
-          this.setAudioBuffer(testBuffer);
+          this.setAudioBuffer(testBuffer, 0);
         }
       }, 100);
     });
@@ -467,9 +467,27 @@ export class AudioEditorElement extends HTMLElement {
       return;
     }
 
+    // Store the current visible range and relative playhead position
+    const currentVisibleStart = this.visibleStart;
+    const currentVisibleEnd = this.visibleEnd;
+    const currentPlayheadPosition = this.playheadPosition;
+
     const normalizedBuffer = this.normalizeAudioBuffer(this.audioBuffer);
     
-    this.setAudioBuffer(normalizedBuffer);
+    // Call setAudioBuffer with the normalized buffer but don't change view position
+    this.setAudioBuffer(normalizedBuffer, this.audioStartTime);
+    
+    // After setting the new buffer, restore the previous view
+    this.refreshView(currentVisibleStart, currentVisibleEnd);
+    
+    // Make sure the scrollbar reflects the current position
+    const scrollBar = this.shadow.getElementById("scrollBar") as HTMLInputElement;
+    if (scrollBar) {
+      scrollBar.value = currentVisibleStart.toString();
+    }
+    
+    // Restore playhead position
+    this.updatePlayhead(currentPlayheadPosition * 1000);
     
     const normalizeEvent = new CustomEvent('audiobufferchange', {
       bubbles: true,
@@ -927,7 +945,7 @@ export class AudioEditorElement extends HTMLElement {
   }
 
   // Update setAudioBuffer to center the audio start time in the view
-  public setAudioBuffer(buffer: AudioBuffer, startTimeSeconds: number = 0): void {
+  public setAudioBuffer(buffer: AudioBuffer, startTimeSeconds: number): void {
       this.audioBuffer = buffer;
       this.audioStartTime = startTimeSeconds;
       
