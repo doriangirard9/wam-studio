@@ -619,6 +619,55 @@ export class AudioEditorElement extends HTMLElement {
     this.playheadElement.style.left = `${pixelPosition}px`;
     this.playheadElement.style.display = 'block';
 
+    // Check for edge scrolling when dragging near canvas edges
+    if (this.isDraggingPlayhead) {
+      const edgeThreshold = this.waveformCanvas.width * 0.15; // 15% from edge
+      const scrollBar = this.shadow.getElementById("scrollBar") as HTMLInputElement;
+      
+      if (scrollBar) {
+        const visibleDuration = this.visibleEnd - this.visibleStart;
+        let newStart = this.visibleStart;
+        let needsRefresh = false;
+        
+        // If near right edge, scroll right
+        if (pixelPosition > this.waveformCanvas.width - edgeThreshold) {
+          // Calculate how far into the edge zone we are (as a percentage)
+          const edgeDepth = (pixelPosition - (this.waveformCanvas.width - edgeThreshold)) / edgeThreshold;
+          // Scroll by a percentage of visible duration based on edge depth
+          const scrollAmount = Math.min(visibleDuration * 0.1 * edgeDepth, 
+                                      this.canvasDuration - visibleDuration - this.visibleStart);
+          
+          if (scrollAmount > 0) {
+            newStart = this.visibleStart + scrollAmount;
+            needsRefresh = true;
+          }
+        }
+        // If near left edge, scroll left
+        else if (pixelPosition < edgeThreshold) {
+          // Calculate how far into the edge zone we are (as a percentage)
+          const edgeDepth = (edgeThreshold - pixelPosition) / edgeThreshold;
+          // Scroll by a percentage of visible duration based on edge depth
+          const scrollAmount = Math.min(visibleDuration * 0.1 * edgeDepth, this.visibleStart);
+          
+          if (scrollAmount > 0) {
+            newStart = this.visibleStart - scrollAmount;
+            needsRefresh = true;
+          }
+        }
+        
+        // Apply the scroll if needed
+        if (needsRefresh) {
+          scrollBar.value = newStart.toString();
+          this.refreshView(newStart, newStart + visibleDuration);
+          
+          // Recalculate pixel position after scroll to keep playhead at cursor
+          const newPositionRatio = (this.playheadPosition - newStart) / visibleDuration;
+          const newPixelPosition = newPositionRatio * this.waveformCanvas.width;
+          this.playheadElement.style.left = `${newPixelPosition}px`;
+        }
+      }
+    }
+
     // Dispatch custom event to notify application about playhead movement
     const event = new CustomEvent('audioeditorplayheadmove', {
       bubbles: true, 
