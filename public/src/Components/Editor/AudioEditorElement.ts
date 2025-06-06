@@ -190,6 +190,7 @@ export class AudioEditorElement extends HTMLElement {
   public shadow: ShadowRoot;
 
   private audioBuffer: AudioBuffer | null = null;
+  private audioStartTime: number = 0;
   
   // Reference to timeline canvas
   private timelineCanvas!: HTMLCanvasElement;
@@ -379,10 +380,7 @@ export class AudioEditorElement extends HTMLElement {
       // Update UI with new range
       updateUI(start, end);
     };
-    
-    // Initialize UI with default empty view
-    // Set initial window to show first minute (not full canvas)
-    updateUI(0, MIN_CANVAS_DURATION);
+
     
     // Initialize the scrollbar properly
     scrollBar.min = "0";
@@ -823,22 +821,21 @@ export class AudioEditorElement extends HTMLElement {
     ctx.strokeStyle = "#666";
     ctx.stroke();
     
-    // If audio is loaded, mark audio boundaries if visible in current view
     if (this.audioBuffer) {
-      const audioStart = 0; // Audio always starts at time 0
-      const audioEnd = this.audioBuffer.duration;
-      
-      // Check if audio start is visible in current view
-      if (audioStart >= start && audioStart <= end) {
-        const audioStartX = ((audioStart - start) / duration) * width;
-        this.drawAudioBoundaryMarker(ctx, audioStartX, height, "Start");
-      }
-      
-      // Check if audio end is visible in current view
-      if (audioEnd >= start && audioEnd <= end) {
-        const audioEndX = ((audioEnd - start) / duration) * width;
-        this.drawAudioBoundaryMarker(ctx, audioEndX, height, "End");
-      }
+        const audioStart = this.audioStartTime; // Audio starts at the specified time (not always 0)
+        const audioEnd = this.audioStartTime + this.audioBuffer.duration;
+        
+        // Check if audio start is visible in current view
+        if (audioStart >= start && audioStart <= end) {
+            const audioStartX = ((audioStart - start) / duration) * width;
+            this.drawAudioBoundaryMarker(ctx, audioStartX, height, "Start");
+        }
+        
+        // Check if audio end is visible in current view
+        if (audioEnd >= start && audioEnd <= end) {
+            const audioEndX = ((audioEnd - start) / duration) * width;
+            this.drawAudioBoundaryMarker(ctx, audioEndX, height, "End");
+        }
     }
   }
   
@@ -875,20 +872,42 @@ export class AudioEditorElement extends HTMLElement {
     }
   }
 
-  // Method to set the audio buffer directly
-  public setAudioBuffer(buffer: AudioBuffer): void {
-    this.audioBuffer = buffer;
-    
-    // Reset waveform drawer to ensure recalculation with new audio
-    this.currentWaveformDrawer = null;
-    this.lastCalculatedZoom = 1;
-    
-    // Keep the current visible range but refresh the view to show audio if applicable
-    this.refreshView(this.visibleStart, this.visibleEnd);
+  // Update setAudioBuffer to center the audio start time in the view
+  public setAudioBuffer(buffer: AudioBuffer, startTimeSeconds: number = 0): void {
+      this.audioBuffer = buffer;
+      this.audioStartTime = startTimeSeconds;
+      
+      // Reset waveform drawer to ensure recalculation with new audio
+      this.currentWaveformDrawer = null;
+      this.lastCalculatedZoom = 1;
+      
+      // Calculate appropriate visible duration
+      const visibleDuration = this.visibleEnd - this.visibleStart;
+      
+      // Calculate new start - position buffer start time in the middle of the screen
+      // by offsetting half the visible duration to the left
+      const newStart = Math.max(0, startTimeSeconds - (visibleDuration / 2));
+      const newEnd = newStart + visibleDuration;
+      
+      // Use the same updateUI function that's used for scrollbar updates
+      // This will trigger the proper view refresh
+      const updateUI = (start: number, end: number) => {
+        this.refreshView(start, end);
+      };
+      
+      // Update UI with new range centered on audio start
+      updateUI(newStart, newEnd);
+      
+      // Update the scrollbar to reflect new position
+      const scrollBar = this.shadow.getElementById("scrollBar") as HTMLInputElement;
+      if (scrollBar) {
+        scrollBar.value = newStart.toString();
+      }
   }
 
   // Refresh view to update waveform display
   private refreshView(start: number, end: number): void {
+    console.log("refresh view start: ", start, " end: ", end);
     const zoomValue = this.shadow.getElementById("zoomValue") as HTMLElement;
     const zoomInput = this.shadow.getElementById("zoomInput") as HTMLInputElement;
     const scrollBar = this.shadow.getElementById("scrollBar") as HTMLInputElement;
@@ -900,8 +919,8 @@ export class AudioEditorElement extends HTMLElement {
     // Draw audio waveform if available and overlapping with visible range
     if (this.audioBuffer) {
       const audioDuration = this.audioBuffer.duration;
-      const audioStart = 0; // Audio always starts at time 0
-      const audioEnd = audioDuration;
+      const audioStart = this.audioStartTime; // Use the stored start time
+      const audioEnd = audioStart + audioDuration;
       
       // Check if there's overlap between visible range and audio content
       if (start < audioEnd && end > audioStart) {
@@ -916,8 +935,8 @@ export class AudioEditorElement extends HTMLElement {
         const needsRecalculation = 
           !this.currentWaveformDrawer || // First render
           calculatedZoomLevel !== this.lastCalculatedZoom || // Zoom milestone changed
-          visibleAudioStart !== this.visibleStart || // Visible range changed
-          visibleAudioEnd !== this.visibleEnd; // Visible range changed
+          this.visibleStart !== start || // Visible range changed
+          this.visibleEnd !== end; // Visible range changed
           
         if (needsRecalculation) {
           // Store that we've calculated for this zoom level
@@ -926,13 +945,17 @@ export class AudioEditorElement extends HTMLElement {
           // Create a new drawer for this zoom level
           this.currentWaveformDrawer = new WaveformDrawer();
           
+          // Adjust the audio offset to account for the start time
+          const audioOffsetSec = visibleAudioStart - audioStart;
+          const audioDurationSec = visibleAudioEnd - visibleAudioStart;
+          
           // Initialize waveform drawer with the overlapping section and the calculated zoom level
           this.currentWaveformDrawer.init(
             this.audioBuffer, 
             this.waveformCanvas, 
             DEFAULT_PRECISION, 
-            visibleAudioStart, 
-            visibleAudioEnd,
+            audioOffsetSec, // Start position within buffer (relative to buffer start)
+            audioOffsetSec + audioDurationSec, // End position within buffer
             calculatedZoomLevel
           );
           
@@ -940,12 +963,12 @@ export class AudioEditorElement extends HTMLElement {
           console.log(`Recalculated waveform at zoom level: ${calculatedZoomLevel}x`);
         }
         
-        // Adjust position to account for canvas coordinates
         // Calculate what percentage of the view should be occupied by the audio
+        // and where it should be positioned
         const startOffset = (visibleAudioStart - start) / (end - start) * this.waveformCanvas.width;
         const visibleWidth = (visibleAudioEnd - visibleAudioStart) / (end - start) * this.waveformCanvas.width;
         
-        // Draw the wave at the correct position with the correct width, passing visual zoom factor
+        // Draw the wave at the correct position with the correct width
         if (this.currentWaveformDrawer) {
           this.currentWaveformDrawer.drawWave(startOffset, visibleWidth, this.currentZoom);
           
@@ -962,7 +985,8 @@ export class AudioEditorElement extends HTMLElement {
     this.visibleStart = start;
     this.visibleEnd = end;
 
-    this.updatePlayhead(this.playheadPosition * 1000); 
+    // Update playhead position if needed
+    this.updatePlayhead(this.playheadPosition * 1000);
 
     // Update zoom input to reflect current zoom
     zoomInput.value = this.currentZoom.toFixed(1);
