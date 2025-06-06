@@ -67,7 +67,6 @@ template.innerHTML = /*html*/`
 
 /* Style for the zoom control */
 .zoom-control {
-  margin-top: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -77,7 +76,7 @@ template.innerHTML = /*html*/`
 
 #zoomSlider {
   width: 300px;
-  height: 20px; /* Make slider taller */
+  height: 20px;
 }
 
 #zoomInput {
@@ -175,6 +174,8 @@ template.innerHTML = /*html*/`
     <span id="zoomValue">1x</span>
     <input type="number" id="zoomInput" min="0.5" max="100" step="0.1" value="1">
   </div>
+
+  <button class="normalize-button">Normalize</button>
 </div>
 `;
 
@@ -238,12 +239,9 @@ export class AudioEditorElement extends HTMLElement {
     
     // Wait for the next frame to ensure DOM is fully updated
     requestAnimationFrame(() => {
-      this.init();
-      
       // Observe the container for resize events
       const container = this.shadow.querySelector('.timeline-waveform-container');
       if (container) {
-        console.log('Starting resize observer on container');
         this.resizeObserver.observe(container);
       } else {
         console.error('Could not find timeline-waveform-container element');
@@ -336,6 +334,10 @@ export class AudioEditorElement extends HTMLElement {
     const closeButton = this.shadow.querySelector('.close-button') as HTMLButtonElement;
     closeButton.addEventListener('click', () => {
       this.onCloseButtonClick();
+    });
+    const normalizeButton = this.shadow.querySelector('.normalize-button') as HTMLButtonElement;
+    normalizeButton.addEventListener('click', () => {
+      this.onNormalizeButtonClick();
     });
     
     // Get reference to the scroll bar
@@ -457,6 +459,58 @@ export class AudioEditorElement extends HTMLElement {
       composed: true
     });
     this.dispatchEvent(closeEvent);
+  }
+
+  private onNormalizeButtonClick() {
+    if (!this.audioBuffer) {
+      console.warn("No audio buffer to normalize");
+      return;
+    }
+
+    const normalizedBuffer = this.normalizeAudioBuffer(this.audioBuffer);
+    
+    this.setAudioBuffer(normalizedBuffer);
+    
+    const normalizeEvent = new CustomEvent('audiobufferchange', {
+      bubbles: true,
+      composed: true,
+      detail: { normalizedBuffer }
+    });
+    this.dispatchEvent(normalizeEvent);
+  }
+
+  private normalizeAudioBuffer(audioBuffer: AudioBuffer): AudioBuffer {
+    const numberOfChannels = audioBuffer.numberOfChannels;
+    const length = audioBuffer.length;
+    const sampleRate = audioBuffer.sampleRate;
+  
+    let maxAmplitude = 0;
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+      const channelData = audioBuffer.getChannelData(channel);
+      for (let i = 0; i < channelData.length; i++) {
+        const abs = Math.abs(channelData[i]);
+        if (abs > maxAmplitude) {
+          maxAmplitude = abs;
+        }
+      }
+    }
+  
+    if (maxAmplitude === 0) {
+      return audioBuffer;
+    }
+  
+    const normalizationFactor = 1 / maxAmplitude;
+  
+    const newBuffer = new AudioContext().createBuffer(numberOfChannels, length, sampleRate);
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+      const input = audioBuffer.getChannelData(channel);
+      const output = newBuffer.getChannelData(channel);
+      for (let i = 0; i < input.length; i++) {
+        output[i] = input[i] * normalizationFactor;
+      }
+    }
+  
+    return newBuffer;
   }
 
   /**
@@ -958,9 +1012,6 @@ export class AudioEditorElement extends HTMLElement {
             audioOffsetSec + audioDurationSec, // End position within buffer
             calculatedZoomLevel
           );
-          
-          // Add info to status display about calculation
-          console.log(`Recalculated waveform at zoom level: ${calculatedZoomLevel}x`);
         }
         
         // Calculate what percentage of the view should be occupied by the audio

@@ -139,7 +139,6 @@ export default class RegionController {
       // TODO Try to add fallback if there is no region view, like a simple red cross invalid region view.
     }
 
-    console.log('LOG: Adding region', region.id, 'to track', track.id);
     // Add to the track
     track.addRegion(region)
     track.modified=true

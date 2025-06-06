@@ -1,4 +1,5 @@
 import App from "../../App";
+import OperableAudioBuffer from "../../Audio/OperableAudioBuffer";
 import { AudioEditorElement } from "../../Components/Editor/AudioEditorElement";
 import { RATIO_MILLS_BY_PX } from "../../Env";
 import SampleRegion from "../../Models/Region/SampleRegion";
@@ -72,6 +73,13 @@ export default class AudioEditorController {
                 this.isAudioEditorOpened = false;
             }
         );
+        audioEditorElement.addEventListener('audiobufferchange', (e: Event) => {
+            const audioBuffer = (e as CustomEvent).detail.normalizedBuffer;
+            region.buffer = OperableAudioBuffer.make(audioBuffer);
+            const track = this._app.tracksController.getTrackById(region.trackId)!;
+            this._app.editorView.drawRegions(track);
+        });
+
         this.isAudioEditorOpened = true;
     }
     
