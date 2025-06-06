@@ -143,6 +143,14 @@ template.innerHTML = /*html*/`
   z-index: 4;
 }
 
+.time-selection {
+  position: absolute;
+  background-color: rgba(100, 149, 237, 0.3);
+  border: 1px solid rgba(100, 149, 237, 0.7);
+  pointer-events: none;
+  z-index: 3;
+}
+
 </style>
 
 <div class="main-waveform-container">
@@ -192,6 +200,13 @@ export class AudioEditorElement extends HTMLElement {
 
   private audioBuffer: AudioBuffer | null = null;
   private audioStartTime: number = 0;
+
+  private startTimeSelection: number = -1;
+  private endTimeSelection: number = -1;
+  private isSelecting: boolean = false;
+  private selectionStartX: number = 0;
+  private selectionEndX: number = 0;
+  private selectionElement: HTMLElement | null = null;
   
   // Reference to timeline canvas
   private timelineCanvas!: HTMLCanvasElement;
@@ -271,7 +286,7 @@ export class AudioEditorElement extends HTMLElement {
             }
           }
           
-          this.setAudioBuffer(testBuffer);
+          this.setAudioBuffer(testBuffer, 0);
         }
       }, 100);
     });
@@ -326,6 +341,7 @@ export class AudioEditorElement extends HTMLElement {
     this.waveformCanvas = this.shadow.getElementById("waveform") as HTMLCanvasElement;
     this.timelineCanvas = this.shadow.getElementById("timelineCanvas") as HTMLCanvasElement;
     this.initPlayhead();
+    this.initSelection();
 
     const zoomSlider = this.shadow.getElementById("zoomSlider") as HTMLInputElement;
     const zoomValue = this.shadow.getElementById("zoomValue") as HTMLElement;
@@ -453,6 +469,147 @@ export class AudioEditorElement extends HTMLElement {
     });
   }
 
+  /**
+   * Initialize selection functionality
+   */
+  private initSelection(): void {
+    // Create selection element
+    this.selectionElement = document.createElement('div');
+    this.selectionElement.className = 'time-selection';
+    this.selectionElement.style.position = 'absolute';
+    this.selectionElement.style.backgroundColor = 'rgba(100, 149, 237, 0.3)';
+    this.selectionElement.style.border = '1px solid rgba(100, 149, 237, 0.7)';
+    this.selectionElement.style.pointerEvents = 'none';
+    this.selectionElement.style.display = 'none';
+    this.selectionElement.style.zIndex = '3';
+    this.selectionElement.style.top = '30px'; // Position below timeline labels
+    this.selectionElement.style.height = 'calc(100% - 30px)';
+    
+    const container = this.shadow.querySelector('.timeline-waveform-container');
+    if (container) {
+      container.appendChild(this.selectionElement);
+    }
+    
+    // Add mouse event listeners for selection
+    this.waveformCanvas.addEventListener('mousedown', (e) => {
+      // Only start selection if not dragging playhead and not shift-clicking (avoid conflicts)
+      if (!this.isDraggingPlayhead && !e.shiftKey) {
+        const rect = this.waveformCanvas.getBoundingClientRect();
+        this.selectionStartX = e.clientX - rect.left;
+        this.selectionEndX = this.selectionStartX;
+        
+        // Calculate start time based on position
+        const positionRatio = this.selectionStartX / this.waveformCanvas.width;
+        this.startTimeSelection = this.visibleStart + positionRatio * (this.visibleEnd - this.visibleStart);
+        this.endTimeSelection = this.startTimeSelection;
+        
+        this.isSelecting = true;
+        this.updateSelectionDisplay();
+        
+        // Prevent default to avoid conflicts with other interactions
+        e.preventDefault();
+      }
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+      if (this.isSelecting) {
+        const rect = this.waveformCanvas.getBoundingClientRect();
+        this.selectionEndX = Math.max(0, Math.min(e.clientX - rect.left, this.waveformCanvas.width));
+        
+        // Calculate end time based on position
+        const positionRatio = this.selectionEndX / this.waveformCanvas.width;
+        this.endTimeSelection = this.visibleStart + positionRatio * (this.visibleEnd - this.visibleStart);
+        
+        this.updateSelectionDisplay();
+      }
+    });
+    
+    document.addEventListener('mouseup', () => {
+      if (this.isSelecting) {
+        this.isSelecting = false;
+        
+        // Ensure start time is before end time
+        if (this.startTimeSelection > this.endTimeSelection) {
+          [this.startTimeSelection, this.endTimeSelection] = [this.endTimeSelection, this.startTimeSelection];
+        }
+
+        this.startTimeSelection = Math.max(0, this.startTimeSelection - this.audioStartTime);
+        this.endTimeSelection = Math.max(0, this.endTimeSelection - this.audioStartTime);
+        
+        // If selection is too small, clear it
+        if (Math.abs(this.endTimeSelection - this.startTimeSelection) < 0.01) {
+          this.clearSelection();
+        } else {
+          // Dispatch event about selection change
+          const selectionEvent = new CustomEvent('audioeditorselection', {
+            bubbles: true,
+            composed: true,
+            detail: {
+              startTime: this.startTimeSelection,
+              endTime: this.endTimeSelection
+            }
+          });
+          this.dispatchEvent(selectionEvent);
+        }
+      }
+    });
+    
+    // Double-click to clear selection
+    this.waveformCanvas.addEventListener('dblclick', () => {
+      this.clearSelection();
+    });
+  }
+
+  /**
+   * Clear the current selection
+   */
+  public clearSelection(): void {
+    this.startTimeSelection = -1;
+    this.endTimeSelection = -1;
+    if (this.selectionElement) {
+      this.selectionElement.style.display = 'none';
+    }
+    
+    // Dispatch event that selection was cleared
+    const clearEvent = new CustomEvent('audioeditorselectionclear', {
+      bubbles: true,
+      composed: true
+    });
+    this.dispatchEvent(clearEvent);
+  }
+
+  /**
+   * Restore selection display after view changes (like scrolling or zooming)
+   */
+  private restoreSelectionAfterViewChange(): void {
+    if (this.startTimeSelection !== this.endTimeSelection) {
+      // Convert time selection to pixel coordinates in current view
+      const startRatio = (this.startTimeSelection - this.visibleStart) / (this.visibleEnd - this.visibleStart);
+      const endRatio = (this.endTimeSelection - this.visibleStart) / (this.visibleEnd - this.visibleStart);
+      
+      this.selectionStartX = startRatio * this.waveformCanvas.width;
+      this.selectionEndX = endRatio * this.waveformCanvas.width;
+      
+      this.updateSelectionDisplay();
+    }
+  }
+
+  /**
+   * Update the visual display of the selection area
+   */
+  private updateSelectionDisplay(): void {
+    if (!this.selectionElement) return;
+    
+    // Calculate left position and width based on current selection points
+    const left = Math.min(this.selectionStartX, this.selectionEndX);
+    const width = Math.abs(this.selectionEndX - this.selectionStartX);
+    
+    // Update selection element style
+    this.selectionElement.style.left = `${left}px`;
+    this.selectionElement.style.width = `${width}px`;
+    this.selectionElement.style.display = width > 0 ? 'block' : 'none';
+  }
+
   private onCloseButtonClick() {
     const closeEvent = new CustomEvent('audioeditorclose', {
       bubbles: true,
@@ -462,14 +619,14 @@ export class AudioEditorElement extends HTMLElement {
   }
 
   private onNormalizeButtonClick() {
-    if (!this.audioBuffer) {
-      console.warn("No audio buffer to normalize");
+    if (!this.audioBuffer || this.startTimeSelection < 0 || this.endTimeSelection < 0) {
+      console.warn('Normalization requires an active selection and a loaded audio buffer.');
       return;
     }
 
-    const normalizedBuffer = this.normalizeAudioBuffer(this.audioBuffer);
+    const normalizedBuffer = this.normalizeAudioBufferSegment(this.audioBuffer, this.startTimeSelection, this.endTimeSelection);
     
-    this.setAudioBuffer(normalizedBuffer);
+    this.setAudioBuffer(normalizedBuffer, this.audioStartTime);
     
     const normalizeEvent = new CustomEvent('audiobufferchange', {
       bubbles: true,
@@ -479,16 +636,23 @@ export class AudioEditorElement extends HTMLElement {
     this.dispatchEvent(normalizeEvent);
   }
 
-  private normalizeAudioBuffer(audioBuffer: AudioBuffer): AudioBuffer {
+  private normalizeAudioBufferSegment(
+    audioBuffer: AudioBuffer,
+    startTime: number,
+    endTime: number
+  ): AudioBuffer {
     const numberOfChannels = audioBuffer.numberOfChannels;
-    const length = audioBuffer.length;
     const sampleRate = audioBuffer.sampleRate;
+    const length = audioBuffer.length;
+  
+    const startSample = Math.max(0, Math.floor(startTime * sampleRate));
+    const endSample = Math.min(length, Math.floor(endTime * sampleRate));
   
     let maxAmplitude = 0;
     for (let channel = 0; channel < numberOfChannels; channel++) {
-      const channelData = audioBuffer.getChannelData(channel);
-      for (let i = 0; i < channelData.length; i++) {
-        const abs = Math.abs(channelData[i]);
+      const data = audioBuffer.getChannelData(channel);
+      for (let i = startSample; i < endSample; i++) {
+        const abs = Math.abs(data[i]);
         if (abs > maxAmplitude) {
           maxAmplitude = abs;
         }
@@ -501,12 +665,19 @@ export class AudioEditorElement extends HTMLElement {
   
     const normalizationFactor = 1 / maxAmplitude;
   
-    const newBuffer = new AudioContext().createBuffer(numberOfChannels, length, sampleRate);
+    const context = new AudioContext();
+    const newBuffer = context.createBuffer(numberOfChannels, length, sampleRate);
+  
     for (let channel = 0; channel < numberOfChannels; channel++) {
       const input = audioBuffer.getChannelData(channel);
       const output = newBuffer.getChannelData(channel);
-      for (let i = 0; i < input.length; i++) {
-        output[i] = input[i] * normalizationFactor;
+  
+      for (let i = 0; i < length; i++) {
+        if (i >= startSample && i < endSample) {
+          output[i] = input[i] * normalizationFactor;
+        } else {
+          output[i] = input[i];
+        }
       }
     }
   
@@ -927,7 +1098,7 @@ export class AudioEditorElement extends HTMLElement {
   }
 
   // Update setAudioBuffer to center the audio start time in the view
-  public setAudioBuffer(buffer: AudioBuffer, startTimeSeconds: number = 0): void {
+  public setAudioBuffer(buffer: AudioBuffer, startTimeSeconds: number): void {
       this.audioBuffer = buffer;
       this.audioStartTime = startTimeSeconds;
       
@@ -957,6 +1128,8 @@ export class AudioEditorElement extends HTMLElement {
       if (scrollBar) {
         scrollBar.value = newStart.toString();
       }
+
+      this.clearSelection();
   }
 
   // Refresh view to update waveform display
@@ -1038,6 +1211,9 @@ export class AudioEditorElement extends HTMLElement {
 
     // Update playhead position if needed
     this.updatePlayhead(this.playheadPosition * 1000);
+
+    // Restore selection display after view change
+    this.restoreSelectionAfterViewChange();
 
     // Update zoom input to reflect current zoom
     zoomInput.value = this.currentZoom.toFixed(1);
