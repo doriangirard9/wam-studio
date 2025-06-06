@@ -1212,7 +1212,6 @@ export class WaveformDrawer {
     }
   }
 
-  // Modified drawWave method to handle visual scaling
   drawWave(startX: number = 0, width: number = 0, visualZoom: number = 1): void {
     if (!this.canvas || !this.peaks) return;
 
@@ -1247,20 +1246,17 @@ export class WaveformDrawer {
     // Calculate zoom ratio for visual scaling (relationship between visual zoom and calculated zoom)
     const zoomRatio = visualZoom / this.calculatedZoomLevel;
     
-    // The effective width we're rendering from our peaks array
-    const effectivePeaksWidth = drawWidth / zoomRatio;
+    // For audio boundaries, we need to use the actual peaks array length
+    // rather than trying to center it when we're at the edge
+    const totalPeaks = this.peaks.length;
     
-    // The starting point in the peaks array (centered if zooming in)
-    const peaksOffset = (this.peaks.length - effectivePeaksWidth) / 2;
-    
-    // Draw top curve with zoom scaling
+    // Draw top curve with improved boundary handling
     for (let i = 0; i < drawWidth; i++) {
-      // Calculate source position in peaks array considering zoom
-      const sourcePos = i / zoomRatio;
-      const peakIndex = Math.floor(peaksOffset + sourcePos);
+      // Calculate peak index directly proportional to position
+      const peakIndex = Math.floor((i / drawWidth) * totalPeaks);
       
       // Ensure peak index is within bounds
-      if (peakIndex >= 0 && peakIndex < this.peaks.length) {
+      if (peakIndex >= 0 && peakIndex < totalPeaks) {
         const val = this.peaks[peakIndex] * coef;
         ctx.lineTo(startX + i, halfH - val);
       } else {
@@ -1269,14 +1265,13 @@ export class WaveformDrawer {
       }
     }
     
-    // Draw bottom curve (in reverse) with zoom scaling
+    // Draw bottom curve (in reverse) with improved boundary handling
     for (let i = drawWidth - 1; i >= 0; i--) {
-      // Calculate source position in peaks array considering zoom
-      const sourcePos = i / zoomRatio;
-      const peakIndex = Math.floor(peaksOffset + sourcePos);
+      // Calculate peak index directly proportional to position
+      const peakIndex = Math.floor((i / drawWidth) * totalPeaks);
       
       // Ensure peak index is within bounds
-      if (peakIndex >= 0 && peakIndex < this.peaks.length) {
+      if (peakIndex >= 0 && peakIndex < totalPeaks) {
         const val = this.peaks[peakIndex] * coef;
         ctx.lineTo(startX + i, halfH + val);
       } else {
@@ -1294,17 +1289,16 @@ export class WaveformDrawer {
     ctx.lineWidth = 1;
     ctx.beginPath();
     
-    // Draw vertical lines with zoom scaling
+    // Draw vertical lines with improved boundary handling
     for (let i = 0; i < drawWidth; i++) {
-      // Only draw every other line at higher zoom for better performance
+      // Only draw every few lines at higher zoom for better performance
       if (visualZoom > 5 && i % 2 !== 0) continue;
       
-      // Calculate source position in peaks array considering zoom
-      const sourcePos = i / zoomRatio;
-      const peakIndex = Math.floor(peaksOffset + sourcePos);
+      // Calculate peak index directly proportional to position
+      const peakIndex = Math.floor((i / drawWidth) * totalPeaks);
       
       // Ensure peak index is within bounds
-      if (peakIndex >= 0 && peakIndex < this.peaks.length) {
+      if (peakIndex >= 0 && peakIndex < totalPeaks) {
         const val = this.peaks[peakIndex] * coef;
         ctx.moveTo(startX + i, halfH - val);
         ctx.lineTo(startX + i, halfH + val);
