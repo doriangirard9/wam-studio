@@ -385,7 +385,9 @@ export default class RegionController {
 
       if (Date.now() - this._lastRegionClickTime < this.DOUBLE_CLICK_DELAY && region instanceof SampleRegion) {
         this._lastRegionClickTime = 0;
-        this._app.audioEditorController.showAudioEditor(region);
+        if(!this._app.audioEditorController.isAudioEditorOpen()){
+          this._app.audioEditorController.showAudioEditor(region);
+        }
       } else {
         this._lastRegionClickTime = Date.now();
       }

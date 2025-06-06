@@ -6,6 +6,7 @@ export default class AudioEditorController {
     private _app: App;
     private _currentEditor: AudioEditorElement | null = null;
     private _lastKnownPlayheadPos: number = 0;
+    private isAudioEditorOpened = false;
 
     constructor(app: App) {
         this._app = app;
@@ -52,8 +53,10 @@ export default class AudioEditorController {
         audioEditorElement.addEventListener('audioeditorclose', () => {
                 this._app.audioEditorView.hide(audioEditorElement);
                 this._currentEditor = null;
+                this.isAudioEditorOpened = false;
             }
         );
+        this.isAudioEditorOpened = true;
     }
     
     /**
@@ -62,6 +65,10 @@ export default class AudioEditorController {
      */
     public getCurrentPlayheadPosition(): number {
         return this._lastKnownPlayheadPos;
+    }
+
+    public isAudioEditorOpen(): boolean {
+        return this.isAudioEditorOpened;
     }
     
 }
