@@ -199,7 +199,6 @@ export default class EditorView extends Application {
      * @param track - The track where the new waveform will be created.
      */
     public createWaveformView(track: Track): WaveformView {
-        console.log("LOG createWaveformView");
         let wave = new WaveformView(this, track);
         this.waveforms.push(wave);
         this.resizeCanvas();
