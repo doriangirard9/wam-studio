@@ -35,34 +35,29 @@ export default class AudioEditorController {
         const audioEditorElement = new AudioEditorElement();
         this._app.audioEditorView.show(audioEditorElement);
         
-        // Keep track of the current editor
         this._currentEditor = audioEditorElement;
         
         audioEditorElement.init();
         audioEditorElement.setAudioBuffer(region.buffer, region.start / 1000);
         
-        // Initialize playhead with last known app position
         audioEditorElement.updatePlayhead(this._lastKnownPlayheadPos);
         
         audioEditorElement.addEventListener('audioeditorplayheadmove', (e: Event) => {
             const customEvent = e as CustomEvent;
             const positionMs = customEvent.detail.positionMs;
             
-            // Update our tracking and the app's playhead position
             this._lastKnownPlayheadPos = positionMs;
             this._app.host.playhead = positionMs;
             this._app.hostView.updateTimer(positionMs);
             
-            // Convert to pixel position
             const pixelPos = positionMs / RATIO_MILLS_BY_PX;
             
-            // Get the viewport width to calculate threshold
             const viewport = this._app.editorView.viewport;
             const viewportWidth = viewport.right - viewport.left;
             
             if (pixelPos > viewportWidth / 2) {
                 this._app.editorView.viewport.moveCenter(pixelPos, viewport.center.y);
-                this._app.editorView.horizontalScrollbar.moveTo(viewport.left); // Update scrollbar to match new viewport position
+                this._app.editorView.horizontalScrollbar.moveTo(viewport.left);
             } else {
                 this._app.editorView.horizontalScrollbar.moveTo(pixelPos - (viewportWidth / 2));
             }
